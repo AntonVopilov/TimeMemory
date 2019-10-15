@@ -1,16 +1,23 @@
 import functools
+import math
 import time
 from dataclasses import dataclass
-
+import tempfile
 import typing
+from pathlib import Path
 
+import pandas
 from memory_profiler import memory_usage
 import numpy
 import matplotlib.pyplot as plt
 
 
-def memory_time_dependence(func, args=None, kws=None, interval: float = 0.01,
-                           include_children: bool = False):
+def memory_time_dependence(func: callable,
+                           args: tuple = None, kws=None,
+                           interval: float = 0.01,
+                           include_children: bool = False,
+                           ) -> typing.Union[numpy.arange, numpy.arange]:
+    """return time_list, memory_list of func(*args, **kws)"""
     if args is None:
         args = ()
     if kws is None:
@@ -18,18 +25,24 @@ def memory_time_dependence(func, args=None, kws=None, interval: float = 0.01,
     mem_usage = memory_usage((func, args, kws), interval=interval,
                              include_children=include_children)
     return numpy.linspace(0, len(mem_usage) * interval,
-                          len(mem_usage)), mem_usage
+                          len(mem_usage)), numpy.array(mem_usage)
 
 
 def time_memory_of_execution(func, args=None, kws=None, interval: float = 0.01,
-                             include_children: bool = False):
+                             include_children: bool = False,
+                             ) -> typing.Tuple[float, float]:
+    """return time of memory usage and max memory value"""
     t, mem = memory_time_dependence(func, args, kws, interval,
                                     include_children)
     return t[-1], max(mem)
 
 
 def timeit_memit(func, args=None, kws=None, interval: float = 0.01,
-                 include_children: bool = False, nums_repeats=4, ):
+                 include_children: bool = False, nums_repeats=4,
+                 ) -> typing.Tuple[float, float]:
+    """return min time and max memory of time_memory_of_execution for
+    num_repeats execution
+    """
     tcc = float(str("inf"))
     mcc = -float(str("inf"))
     for _ in range(nums_repeats):
@@ -40,10 +53,16 @@ def timeit_memit(func, args=None, kws=None, interval: float = 0.01,
     return tcc, mcc
 
 
-def args_kws_resolution(func, args_list: typing.List[tuple] = None,
-                        kws_list: typing.List[tuple] = None,
-                        interval: float = 0.01,
-                        include_children: bool = False, mode="usage"):
+def args_kws_memtime_resol(func, args_list: typing.List[tuple] = None,
+                           kws_list: typing.List[dict] = None,
+                           interval: float = 0.01,
+                           include_children: bool = False, mode="usage",
+                           ) -> typing.Tuple[list, list]:
+    """return list of times and list of memories info
+        mode="usage" return list of min t, min mem values
+        mode="time_resolve" return list of numpy.arrange of times
+        and correspond memory_values
+     """
     args_list = args_list or [()]
     kws_list = kws_list or [{}] * len(args_list)
     time_list = []
@@ -84,14 +103,14 @@ class ProfileVisualiser:
 
     def get_args_kws_dependence(self, func, args_list, kws_list=None):
         kws_list = kws_list or [{}] * len(args_list)
-        return zip(*args_kws_resolution(func, args_list, kws_list,
-                                        self.interval,
-                                        self.include_children,
-                                        mode="time_resolve"))
+        return zip(*args_kws_memtime_resol(func, args_list, kws_list,
+                                           self.interval,
+                                           self.include_children,
+                                           mode="time_resolve"))
 
     def plot_args_resolution(self, func, args_list=None, kws_list=None,
                              label_list=None,
-                             title=None):
+                             title=None, add_score=True):
         kws_list = kws_list or [{}] * len(args_list)
         label_list = label_list or [f"args={args}\nkws={kws}" for args, kws in
                                     zip(args_list, kws_list)]
@@ -100,29 +119,47 @@ class ProfileVisualiser:
         m_usage = []
 
         plt.style.use(self.style)
-        fig, (ax_1, ax_2) = plt.subplots(nrows=2, ncols=1)
+        if add_score:
+            fig, (ax_1, ax_2) = plt.subplots(nrows=2, ncols=1)
+        else:
+            fig, ax_1 = plt.subplots(nrows=1, ncols=1)
+            ax_2 = None
+
+        # plot memory/time dependence for each arg in arg_list
+
         for idx, (t, mem) in enumerate(
                 self.get_args_kws_dependence(func, args_list, kws_list)
         ):
             ax_1.plot(t, mem, label=label_list[idx], linestyle="--")
             t_usage.append(t[-1])
             m_usage.append(max(mem))
-
         ax_1.legend()
-        ax_2.scatter(t_usage, m_usage)
-        for x, y, txt in zip(t_usage, m_usage, label_list):
-            ax_2.annotate(txt, (x, y))
         ax_1.set_xlabel(self.time_label)
-        ax_2.set_xlabel(self.time_label)
         ax_1.set_ylabel(self.memory_label)
-        ax_2.set_ylabel(self.memory_label)
         ax_1.set_title(title)
+
+        # plot scatter max(memory)/min(time)
+        if add_score:
+            ax_2.scatter(t_usage, m_usage)
+            for x, y, txt in zip(t_usage, m_usage, label_list):
+                ax_2.annotate(txt, (x, y))
+            ax_2.set_xlabel(self.time_label)
+            ax_2.set_ylabel(self.memory_label)
         plt.tight_layout()
         if self.show:
             plt.show()
 
-    def plot_memory_time(self, time_list, memory_list, label, title,
-                         annotations=None):
+    def plot_memory_time_resolution(self, func, args=None, kws=None,
+                                    label=None, title=None, annotations=None):
+
+        time_list, memory_list = memory_time_dependence(
+            func, args, kws,
+            interval=self.interval,
+            include_children=self.include_children)
+
+        label = label or f"{func.__name__}\nargs={args}\nkws={kws}"
+        title = title or f"{func.__name__} memory-time resolution"
+
         plt.style.use(self.style)
         plt.plot(time_list, memory_list, label=label, linestyle="dotted")
         plt.legend()
@@ -136,42 +173,38 @@ class ProfileVisualiser:
         if self.show:
             plt.show()
 
-    def plot_memory_time_resolution(self, func, args=None, kws=None,
-                                    label=None, title=None):
-        time_list, memory_list = memory_time_dependence(func, args, kws,
-                                                        interval=self.interval,
-                                                        include_children=self.include_children, )
-        label = label or f"{func.__name__}\nargs={args}\nkws={kws}"
-        title = title or f"{func.__name__} memory-time resolution"
-        self.plot_memory_time(time_list, memory_list, label, title)
-
 
 if __name__ == "__main__":
 
-    def foo(**kwargs):
-        time.sleep(0.5)
+    def goo_n(n: int = 10, *args, **kwargs):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = numpy.random.random((n,n))
+            pandas.DataFrame(
+                data=data
+            ).to_csv(Path(tmpdir)/"file.csv")
+        return data
 
 
     def func_example(*args, **kwargs):
-        foo(**kwargs)
-        if args:
-            time.sleep(min(len(args), 1))
+        goo_n(*args, **kwargs)
 
 
-    # print(f"time_memory_of_execution", time_memory_of_execution(func_example))
-    # print(f"timit memit", timeit_memit(func_example, nums_repeats=10))
-    # print("timer", timer(func_example)())
-    # args_list = [(1, 2), (3, 4), (5, 6), tuple(range(10 ** 6))]
-    # print("args_resol",
-    #       args_kws_resolution(func_example, args_list, mode="usage"))
-    # print("args_resol_timr",
-    #       args_kws_resolution(func_example, args_list, mode="time_resolve"))
-    # print()
-    # print(memory_time_dependence(func_example, args=(3, 4)))
+    print(
+        f"time_memory_of_execution {time_memory_of_execution(func_example, args=(500,))}"
+        )
 
-    # visualiser = ProfileVisualiser()
-    # visualiser.plot_memory_time_resolution(func_example, args=(1, 2, 3))
-    # visualiser.plot_args_resolution(func_example, args_list=[(1, 2), (1, 2, 3),
-    #                                                          (1, 2, 3, 4),
-    #                                                          (1,)])
-    # print(visualiser._res)
+    # print(
+    #     f"time_memory_of_execution {memory_time_dependence(func_example, args=(500,))}"
+    # )
+
+
+    visualiser = ProfileVisualiser()
+    # visualiser.plot_memory_time_resolution(func_example, args=(2000, ))
+    args_list = [
+        (i, ) for i in range(500, 2500, 500)
+    ]
+    # visualiser.plot_args_resolution(func_example, args_list, add_score=False)
+    visualiser.plot_args_resolution(func_example, args_list, add_score=False,
+                                    label_list=[
+                                        f"{i} * {i} csv file" for i in args_list
+                                    ])
