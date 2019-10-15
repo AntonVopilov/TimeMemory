@@ -85,6 +85,7 @@ class ProfileVisualiser:
     include_children: bool = False
     show: bool = True
     style = "ggplot"
+    grid = True
     _res = None
     _args_kws = None
 
@@ -130,7 +131,7 @@ class ProfileVisualiser:
         for idx, (t, mem) in enumerate(
                 self.get_args_kws_dependence(func, args_list, kws_list)
         ):
-            ax_1.plot(t, mem, label=label_list[idx], linestyle="--")
+            ax_1.plot(t, mem, label=label_list[idx], linestyle="dotted")
             t_usage.append(t[-1])
             m_usage.append(max(mem))
         ax_1.legend()
@@ -146,6 +147,9 @@ class ProfileVisualiser:
             ax_2.set_xlabel(self.time_label)
             ax_2.set_ylabel(self.memory_label)
         plt.tight_layout()
+
+        if self.grid:
+            plt.grid()
         if self.show:
             plt.show()
 
@@ -204,6 +208,8 @@ if __name__ == "__main__":
         (i, ) for i in range(500, 2500, 500)
     ]
     # visualiser.plot_args_resolution(func_example, args_list, add_score=False)
+    print(plt.style.available)
+    visualiser.style = 'seaborn-deep'
     visualiser.plot_args_resolution(func_example, args_list, add_score=False,
                                     label_list=[
                                         f"{i} * {i} csv file" for i in args_list
